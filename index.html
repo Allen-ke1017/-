@@ -6,21 +6,25 @@
     <title>設備掃描借用系統</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f8f9fa; }
-        #reader { width: 100%; max-width: 450px; margin: 0 auto; background: black; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
-        #result { margin-top: 25px; font-size: 18px; font-weight: bold; color: #333; white-space: pre-wrap; line-height: 1.5; min-height: 60px; }
-        #camera-select { margin-bottom: 15px; padding: 8px; font-size: 16px; border-radius: 5px; width: 100%; max-width: 300px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; text-align: center; padding: 20px; background-color: #f8f9fa; }
+        .container { max-width: 500px; margin: 0 auto; }
+        #reader { width: 100%; background: #000; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; }
+        #result { margin-top: 25px; font-size: 18px; font-weight: bold; color: #333; white-space: pre-wrap; line-height: 1.6; min-height: 80px; padding: 15px; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        #camera-select { margin-bottom: 15px; padding: 10px; font-size: 16px; border-radius: 8px; width: 100%; border: 1px solid #ced4da; background-color: #fff; }
     </style>
 </head>
 <body>
-    <h2>📷 設備掃描借用系統</h2>
-    
-    <select id="camera-select"></select>
-    
-    <div id="reader"></div>
-    <div id="result">相機啟動中，請稍候...</div>
+    <div class="container">
+        <h2>📷 設備掃描借用系統</h2>
+        
+        <select id="camera-select"></select>
+        
+        <div id="reader"></div>
+        <div id="result">相機啟動中，請稍候...</div>
+    </div>
 
     <script>
+        // ⚠️ 請確保此處為正式發布的網址（結尾必須為 /exec）
         const API_URL = "https://script.google.com/macros/s/AKfycbwRIyBbewqLG8MVTRPHYaCO8tsWW5jUf1TSRcagY5ArUMe1g7iqJR_qL_PlYBGImObT/exec"; 
 
         let isProcessing = false; 
@@ -29,33 +33,52 @@
         const cameraSelect = document.getElementById('camera-select');
         const resultDiv = document.getElementById('result');
 
+        // 解析 QR Code 內容，若為網址自動擷取 text 參數
+        function extractEquipmentId(rawText) {
+            try {
+                const url = new URL(rawText);
+                const paramText = url.searchParams.get("text");
+                if (paramText) return paramText;
+            } catch (e) {
+                // 不符合 URL 格式則保持原樣
+            }
+            return rawText;
+        }
+
         function onScanSuccess(decodedText) {
             if (isProcessing) return; 
             isProcessing = true;
             
-            if (decodedText.includes("text=")) {
-                decodedText = decodedText.split("text=")[1].split("&")[0];
-            }
+            const cleanId = extractEquipmentId(decodedText);
             
             resultDiv.style.color = "#0056b3";
-            resultDiv.innerText = `讀取到編號：${decodedText}\n連線中...`;
+            resultDiv.innerText = `讀取到編號：${cleanId}\n連線中...`;
             
-            fetch(`${API_URL}?id=${encodeURIComponent(decodedText)}`)
-                .then(response => response.text())
-                .then(text => {
-                    resultDiv.style.color = text.includes("成功") ? "green" : "red";
-                    resultDiv.innerText = text;
-                    setTimeout(() => { 
-                        isProcessing = false; 
-                        resultDiv.style.color = "#333";
-                        resultDiv.innerText = "請對準下一個 QR Code 進行掃描...";
-                    }, 3500); 
-                })
-                .catch(error => {
-                    resultDiv.style.color = "red";
-                    resultDiv.innerText = "系統連線錯誤！";
-                    setTimeout(() => { isProcessing = false; }, 3500);
-                });
+            // 加上 redirect: "follow" 以順利跟隨 GAS 302 重定向
+            fetch(`${API_URL}?id=${encodeURIComponent(cleanId)}`, {
+                method: "GET",
+                redirect: "follow"
+            })
+            .then(response => {
+                if (!response.ok) throw new Error("網路連線異常");
+                return response.text();
+            })
+            .then(text => {
+                resultDiv.style.color = text.includes("成功") || text.includes("歸還") ? "#28a745" : "#dc3545";
+                resultDiv.innerText = text;
+                
+                setTimeout(() => { 
+                    isProcessing = false; 
+                    resultDiv.style.color = "#333";
+                    resultDiv.innerText = "請對準下一個 QR Code 進行掃描...";
+                }, 3500); 
+            })
+            .catch(error => {
+                console.error("Fetch 錯誤:", error);
+                resultDiv.style.color = "#dc3545";
+                resultDiv.innerText = "⚠️ 系統連線錯誤！\n請檢查 API 網址或網路狀態。";
+                setTimeout(() => { isProcessing = false; }, 3500);
+            });
         }
 
         function startCamera(cameraId) {
@@ -65,7 +88,7 @@
                 })
                 .catch(err => { 
                     console.error("相機啟動失敗：", err);
-                    resultDiv.style.color = "red";
+                    resultDiv.style.color = "#dc3545";
                     resultDiv.innerText = "相機啟動失敗，請重新整理頁面或檢查權限。";
                 });
         }
@@ -89,13 +112,16 @@
                 cameraSelect.value = defaultCameraId;
                 startCamera(defaultCameraId);
 
-                cameraSelect.addEventListener('change', () => {
+                cameraSelect.addEventListener('change', async () => {
                     cameraSelect.disabled = true;
-                    html5QrCode.stop().then(() => {
-                        return startCamera(cameraSelect.value);
-                    }).finally(() => {
+                    try {
+                        await html5QrCode.stop();
+                        await startCamera(cameraSelect.value);
+                    } catch (err) {
+                        console.error("切換相機錯誤:", err);
+                    } finally {
                         cameraSelect.disabled = false;
-                    });
+                    }
                 });
             } else {
                 resultDiv.innerText = "找不到可用的鏡頭設備。";
