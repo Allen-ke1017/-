@@ -6,11 +6,48 @@
     <title>設備掃描借用系統</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; text-align: center; padding: 20px; background-color: #f8f9fa; }
-        .container { max-width: 500px; margin: 0 auto; }
-        #reader { width: 100%; background: #000; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.15); overflow: hidden; }
-        #result { margin-top: 25px; font-size: 18px; font-weight: bold; color: #333; white-space: pre-wrap; line-height: 1.6; min-height: 80px; padding: 15px; border-radius: 8px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        #camera-select { margin-bottom: 15px; padding: 10px; font-size: 16px; border-radius: 8px; width: 100%; border: 1px solid #ced4da; background-color: #fff; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            background-color: #f8f9fa; 
+        }
+        .container { 
+            max-width: 500px; 
+            margin: 0 auto; 
+        }
+        #reader { 
+            width: 100%; 
+            background: #000; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15); 
+            overflow: hidden; 
+        }
+        #reader video {
+            object-fit: cover; /* 防止手機鏡頭畫面變形 */
+        }
+        #result { 
+            margin-top: 25px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            color: #333; 
+            white-space: pre-wrap; 
+            line-height: 1.6; 
+            min-height: 80px; 
+            padding: 15px; 
+            border-radius: 8px; 
+            background: #fff; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+        }
+        #camera-select { 
+            margin-bottom: 15px; 
+            padding: 10px; 
+            font-size: 16px; 
+            border-radius: 8px; 
+            width: 100%; 
+            border: 1px solid #ced4da; 
+            background-color: #fff; 
+        }
     </style>
 </head>
 <body>
@@ -24,7 +61,7 @@
     </div>
 
     <script>
-        // ⚠️ 請確保此處為正式發布的網址（結尾必須為 /exec）
+        // ⚠️ 請替換為你正式發布的 GAS Web App 網址（結尾必須為 /exec）
         const API_URL = "https://script.google.com/macros/s/AKfycbwRIyBbewqLG8MVTRPHYaCO8tsWW5jUf1TSRcagY5ArUMe1g7iqJR_qL_PlYBGImObT/exec"; 
 
         let isProcessing = false; 
@@ -54,19 +91,24 @@
             resultDiv.style.color = "#0056b3";
             resultDiv.innerText = `讀取到編號：${cleanId}\n連線中...`;
             
-            // 加上 redirect: "follow" 以順利跟隨 GAS 302 重定向
+            // 發送 Fetch 請求
             fetch(`${API_URL}?id=${encodeURIComponent(cleanId)}`, {
                 method: "GET",
                 redirect: "follow"
             })
             .then(response => {
-                if (!response.ok) throw new Error("網路連線異常");
+                if (!response.ok) {
+                    throw new Error(`HTTP 錯誤！狀態碼：${response.status}`);
+                }
                 return response.text();
             })
             .then(text => {
-                resultDiv.style.color = text.includes("成功") || text.includes("歸還") ? "#28a745" : "#dc3545";
+                // 根據回應文字顯示成功（綠色）或失敗（紅色）
+                const isSuccess = text.includes("成功") || text.includes("歸還") || text.includes("✅");
+                resultDiv.style.color = isSuccess ? "#28a745" : "#dc3545";
                 resultDiv.innerText = text;
                 
+                // 3.5 秒後自動恢復掃描狀態
                 setTimeout(() => { 
                     isProcessing = false; 
                     resultDiv.style.color = "#333";
@@ -76,7 +118,8 @@
             .catch(error => {
                 console.error("Fetch 錯誤:", error);
                 resultDiv.style.color = "#dc3545";
-                resultDiv.innerText = "⚠️ 系統連線錯誤！\n請檢查 API 網址或網路狀態。";
+                resultDiv.innerText = "⚠️ 系統連線錯誤！\n請檢查 GAS 部署權限設定或網路狀態。";
+                
                 setTimeout(() => { isProcessing = false; }, 3500);
             });
         }
@@ -89,10 +132,11 @@
                 .catch(err => { 
                     console.error("相機啟動失敗：", err);
                     resultDiv.style.color = "#dc3545";
-                    resultDiv.innerText = "相機啟動失敗，請重新整理頁面或檢查權限。";
+                    resultDiv.innerText = "相機啟動失敗，請確認已使用 HTTPS 連線並授予相機權限。";
                 });
         }
 
+        // 初始化取得鏡頭列表
         Html5Qrcode.getCameras().then(devices => {
             if (devices && devices.length) {
                 let defaultCameraId = devices[0].id;
@@ -112,6 +156,7 @@
                 cameraSelect.value = defaultCameraId;
                 startCamera(defaultCameraId);
 
+                // 切換相機事件處理
                 cameraSelect.addEventListener('change', async () => {
                     cameraSelect.disabled = true;
                     try {
@@ -127,7 +172,8 @@
                 resultDiv.innerText = "找不到可用的鏡頭設備。";
             }
         }).catch(err => {
-            resultDiv.innerText = "無法取得相機清單，請確認已授予相機權限。";
+            console.error("鏡頭存取失敗:", err);
+            resultDiv.innerText = "無法取得相機權限，請確認網頁運行於 HTTPS 環境。";
         });
     </script>
 </body>
