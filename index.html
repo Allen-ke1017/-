@@ -24,7 +24,7 @@
             overflow: hidden; 
         }
         #reader video {
-            object-fit: cover; /* 防止手機鏡頭畫面變形 */
+            object-fit: cover;
         }
         #result { 
             margin-top: 25px; 
@@ -62,7 +62,7 @@
 
     <script>
         // ⚠️ 請替換為你正式發布的 GAS Web App 網址（結尾必須為 /exec）
-        const API_URL = "https://script.google.com/macros/s/AKfycbwRIyBbewqLG8MVTRPHYaCO8tsWW5jUf1TSRcagY5ArUMe1g7iqJR_qL_PlYBGImObT/exec"; 
+        const API_URL = "https://script.google.com/macros/s/AKfycbxXSi1biHAB268VbXgj8R6D-VfreyPHEVrwxwOmadC3tC1PM9mnw5WG28KffQLKI_DF/exec"; 
 
         let isProcessing = false; 
         const html5QrCode = new Html5Qrcode("reader");
@@ -70,14 +70,13 @@
         const cameraSelect = document.getElementById('camera-select');
         const resultDiv = document.getElementById('result');
 
-        // 解析 QR Code 內容，若為網址自動擷取 text 參數
         function extractEquipmentId(rawText) {
             try {
                 const url = new URL(rawText);
                 const paramText = url.searchParams.get("text");
                 if (paramText) return paramText;
             } catch (e) {
-                // 不符合 URL 格式則保持原樣
+                // 非網址格式直接回傳原字串
             }
             return rawText;
         }
@@ -89,26 +88,23 @@
             const cleanId = extractEquipmentId(decodedText);
             
             resultDiv.style.color = "#0056b3";
-            resultDiv.innerText = `讀取到編號：${cleanId}\n連線中...`;
+            resultDiv.innerText = `讀取到編號：${cleanId}\n連線處理中...`;
             
-            // 發送 Fetch 請求
             fetch(`${API_URL}?id=${encodeURIComponent(cleanId)}`, {
                 method: "GET",
                 redirect: "follow"
             })
             .then(response => {
                 if (!response.ok) {
-                    throw new Error(`HTTP 錯誤！狀態碼：${response.status}`);
+                    throw new Error(`HTTP 狀態碼：${response.status}`);
                 }
                 return response.text();
             })
             .then(text => {
-                // 根據回應文字顯示成功（綠色）或失敗（紅色）
-                const isSuccess = text.includes("成功") || text.includes("歸還") || text.includes("✅");
+                const isSuccess = text.includes("成功") || text.includes("歸還") || text.includes("🎉") || text.includes("✅");
                 resultDiv.style.color = isSuccess ? "#28a745" : "#dc3545";
                 resultDiv.innerText = text;
                 
-                // 3.5 秒後自動恢復掃描狀態
                 setTimeout(() => { 
                     isProcessing = false; 
                     resultDiv.style.color = "#333";
@@ -119,7 +115,6 @@
                 console.error("Fetch 錯誤:", error);
                 resultDiv.style.color = "#dc3545";
                 resultDiv.innerText = "⚠️ 系統連線錯誤！\n請檢查 GAS 部署權限設定或網路狀態。";
-                
                 setTimeout(() => { isProcessing = false; }, 3500);
             });
         }
@@ -136,7 +131,6 @@
                 });
         }
 
-        // 初始化取得鏡頭列表
         Html5Qrcode.getCameras().then(devices => {
             if (devices && devices.length) {
                 let defaultCameraId = devices[0].id;
@@ -147,7 +141,6 @@
                     option.text = device.label || `相機 ${index + 1}`;
                     cameraSelect.appendChild(option);
 
-                    // 優先選擇後置鏡頭
                     if (/back|rear|environment/i.test(device.label)) {
                         defaultCameraId = device.id;
                     }
@@ -156,7 +149,6 @@
                 cameraSelect.value = defaultCameraId;
                 startCamera(defaultCameraId);
 
-                // 切換相機事件處理
                 cameraSelect.addEventListener('change', async () => {
                     cameraSelect.disabled = true;
                     try {
